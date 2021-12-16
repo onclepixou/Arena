@@ -1,0 +1,48 @@
+{
+	"ActorId" : "Rob1",
+		
+	"Events" : {
+
+		"x" : {
+
+			"SignalInformation" : {
+
+				"type"      : "interval",
+				"datatype"  : "float",
+				"dimension" : "0"
+			},
+
+			"TriggeredOnSignals" : []
+		},
+
+		"y" : {
+
+			"SignalInformation" : {
+
+				"type"      : "interval",
+				"datatype"  : "float",
+				"dimension" : "0"
+			},
+
+			"TriggeredOnSignals" : []
+		},
+
+		"d1" : {
+
+			"SignalInformation" : {
+
+				"type": "interval",
+				"datatype"  : "float",
+				"dimension" : "0"
+			},
+
+			"TriggeredOnSignals" : ["this.x", "this.y", "LM1.x", "LM1.y"],
+		
+			"Rule" : {
+
+				"Operation"  : "Distance2D",
+				"Argument" : ["this.x", "this.y", "LM1.x", "LM1.y"]
+			}
+		}
+	}
+}

@@ -1,0 +1,32 @@
+{
+		
+	"Processes" : {
+
+		"pos_update" : {
+
+			"TriggeredOnSignals" : ["Rob1.x", "Rob1.y", "LM1.x", "LM1.y"],
+
+			"Program" : [
+
+				["Csub", "pos_update.temp_v2", "Rob1.x", "LM1.x"],
+				["Csub", "pos_update.temp_v4", "Rob1.y", "LM1.y"],
+				["Csqr", "pos_update.temp_v1", "pos_update.temp_v2"],
+				["Csqr", "pos_update.temp_v3", "pos_update.temp_v4"],
+				["Csqr", "pos_update.temp_v0"],
+
+				["Csqr_rev", "pos_update.temp_v0", "Rob1.d1"],
+				["Cadd_rev", "pos_update.temp_v0", "pos_update.temp_v1", "pos_update.temp_v3"]
+				["Csub_rev", "pos_update.temp_v1", "pos_update.temp_v0", "pos_update.temp_v3"]
+				["Csub_rev", "pos_update.temp_v3", "pos_update.temp_v0", "pos_update.temp_v1"]
+				["Csqr_rev", "pos_update.temp_v1", "pos_update.temp_v2"],
+				["Csqr_rev", "pos_update.temp_v3", "pos_update.temp_v4"],
+				["Csub_rev", "pos_update.temp_v2", "Rob1.x", "LM1.x"],
+				["Cadd_rev", "Rob1.x", "pos_update.temp_v2", "Rob1.x"],
+				["Csub_rev","LM1.x", "Rob1.x", "pos_update.temp_v2"],
+				["Csub_rev", "pos_update.temp_v4", "Rob1.y", "LM1.y"],
+				["Cadd_rev", "Rob1.y", "pos_update.temp_v4", "Rob1.y"],
+				["Csub_rev","LM1.y", "Rob1.y", "pos_update.temp_v2"]
+			]
+		}
+	}
+}

@@ -1,0 +1,30 @@
+{
+	"ActorId" : "LM1",
+		
+	"Events" : {
+
+		"x" : {
+
+			"SignalInformation" : {
+
+				"type"      : "interval",
+				"datatype"  : "float",
+				"dimension" : "0"
+			},
+
+			"TriggeredOnSignals" : []
+		},
+
+		"y" : {
+
+			"SignalInformation" : {
+
+				"type"      : "interval",
+				"datatype"  : "float",
+				"dimension" : "0"
+			},
+
+			"TriggeredOnSignals" : []
+		}
+	}
+}
