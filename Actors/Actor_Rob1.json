@@ -1,48 +1,32 @@
 {
 	"ActorId" : "Rob1",
-		
-	"Events" : {
-
-		"x" : {
-
-			"SignalInformation" : {
-
-				"type"      : "interval",
-				"datatype"  : "float",
-				"dimension" : "0"
-			},
-
-			"TriggeredOnSignals" : []
+	
+	"Data" : [
+	
+		{
+			"Name" : "xtrue",
+			"Type" : "Float"
 		},
 
-		"y" : {
-
-			"SignalInformation" : {
-
-				"type"      : "interval",
-				"datatype"  : "float",
-				"dimension" : "0"
-			},
-
-			"TriggeredOnSignals" : []
+		{
+			"Name" : "ytrue",
+			"Type" : "Float"
 		},
 
-		"d1" : {
-
-			"SignalInformation" : {
-
-				"type": "interval",
-				"datatype"  : "float",
-				"dimension" : "0"
-			},
-
-			"TriggeredOnSignals" : ["this.x", "this.y", "LM1.x", "LM1.y"],
-		
-			"Rule" : {
-
-				"Operation"  : "Distance2D",
-				"Argument" : ["this.x", "this.y", "LM1.x", "LM1.y"]
-			}
+		{
+			"Name" : "int",
+			"Type" : "Interval"
 		}
-	}
+	],
+		
+	"Events" : [
+
+		{
+			"Name" : "d1",
+			"Type" : "Interval",
+			"Triggers" : ["Rob1.Update.xtrue", "Rob1.Update.ytrue", "LM1.Update.xtrue", "LM1.Update.ytrue"],
+			"Operation" : "Distance2DNoised",
+			"Arguments" : ["Rob1.xtrue", "Rob1.ytrue", "LM1.xtrue", "LM1.ytrue"]
+		}
+	]
 }

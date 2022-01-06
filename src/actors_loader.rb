@@ -2,7 +2,9 @@ require 'json'
 require 'colorize'
 
 require_relative 'load_exception'
-require_relative 'utils_loader'
+require_relative 'actor'
+require_relative 'supported'
+require "dry-schema"
 
 module Arena
 
@@ -10,21 +12,52 @@ module Arena
 
 		class ActorsLoader
 
+			include Arena::Datatypes
+			include Arena::Keywords
+
 			attr_reader :actors_dir      # @return String
 			attr_reader :actors_filename # @return String
+			attr_reader :actors_schema   # @return dry-schema
 			attr_accessor :actors        # @return Array[Actor]
 
 			def initialize()
 
 				@actors_dir = "Actors"
 				@actors_filename = "Actor_*.json"
+				@actors_schema = load_schema()
 				@actors = Array.new()
 
 				Dir.glob(@actors_dir + "/**/" + actors_filename ).select{ |e|
 					
 					File.file? e
-					load_actor(e)				
+					load_actor(e)
 				}
+
+				validate_actors()
+			end
+
+			def load_schema()
+
+				schema = Dry::Schema.JSON do
+
+					required(:ActorId).filled(:string)
+
+					required(:Data).array(:hash) do
+						required(:Name).filled(:string)
+						required(:Type).filled(:string)
+					end
+
+					required(:Events).array(:hash) do
+						required(:Name).filled(:string)
+						required(:Type).filled(:string)
+						required(:Triggers).each(:string)
+						required(:Operation).filled(:string)
+						required(:Arguments).each(:string)
+					end
+
+				end
+
+				return schema
 			end
 
 			def load_actor(file)
@@ -33,8 +66,17 @@ module Arena
 
 					json = File.read(file)
 					obj = JSON.parse(json)
-					parse_actor(file, obj)
 
+					result = @actors_schema.call(obj)
+
+					if(!result.success?)
+
+						msgError = "FormatError : " + file +  " does not match allowed schema.\nPleasde Refer to documentation"
+						raise StandardError.new(msgError)
+					end
+
+					parse_actor(obj)
+	
 				rescue Errno::ENOENT => e
 
 					msgError = "LoadError : " + file +  " does not exist"
@@ -49,189 +91,210 @@ module Arena
 				puts "Successful loading of actor " + file
 			end
 
-			def parse_actor(file, obj)
+			def parse_actor(obj)
 
 				# Object to store actor data
-				new_actor = Actor.new();
 
-				Arena::Loader.assert_object_key(file, obj, 'ActorId')
-				Arena::Loader.assert_object_key(file, obj, 'Events')
+				new_actor = Actor.new();
 
 				# Set actor id
 				new_actor.actor_id  = obj['ActorId']
+				if(!identifier_name_valid?(new_actor.actor_id))
 
-				# Load events
+					msgError = "ContentError : " + new_actor.actor_id + " is not a valid actor name"
+					raise StandardError.new(msgError)
+				end
+
+				# Set actor data
+				data = obj['Data']
+
+				data.each{ |element|
+				
+					newData = Data.new()
+					newData.name = element["Name"]
+					newData.type = element["Type"]
+
+					if(!identifier_name_valid?(newData.name))
+
+						msgError = "ContentError : data " + newData.name  + " from actor " + new_actor.actor_id +  " is not a valid data name"
+						raise StandardError.new(msgError)
+					end
+
+					if(!type_supported?(newData.type))
+
+						msgError = "ContentError : datatype " + newData.type + " of " + newData.name  + " from actor " + new_actor.actor_id +  " is not a valid type"
+						raise StandardError.new(msgError)
+					end
+
+					new_actor.data.append(newData)
+				}
+
+				# Set actor events
 				events = obj['Events']
-				event_list = events.keys
 
-				event_list.each{ |event_name|
+				events.each{ |element|
+				
+					newEvent = Event.new()
+					newEvent.name = element["Name"]
+					newEvent.type = element["Type"]
+					newEvent.triggers = element["Triggers"]
+					newEvent.operation = element["Operation"]
+					newEvent.args = element["Arguments"]
 
-					actor_event = parse_event(file, events[event_name], event_name)
-					new_actor.events.append(actor_event)
+					if(!identifier_name_valid?(newEvent.name))
+
+						msgError = "ContentError : event " + newEvent.name  + " from actor " + new_actor.actor_id +  " is not a valid event name"
+						raise StandardError.new(msgError)
+					end
+
+					if(!type_supported?(newEvent.type))
+
+						msgError = "ContentError : datatype " + newEvent.type + " of " + newEvent.name  + " from actor " + new_actor.actor_id +  " is not a valid type"
+						raise StandardError.new(msgError)
+					end
+
+					new_actor.events.append(newEvent)
 				}
 
 				@actors.append(new_actor)
 			end
 
-			def parse_event(file, obj, name)
+			def validate_actors()
 
-					actor_event = Event.new()
+				# check if there is no duplicate in actor name
+				actors_name = Array.new()
+		
+				@actors.each{ |actor|
 
-					actor_event.name = name
+					if(actors_name.include?(actor.actor_id))
 
-					Arena::Loader.assert_object_key(file, obj, 'SignalInformation')
-					Arena::Loader.assert_object_key(file, obj, 'TriggeredOnSignals')
+						msgError = "ContentError : multiple declaration of actor name " + actor.actor_id
+						raise StandardError.new(msgError)
+					end
+					actors_name.append(actor.actor_id)
 
-					info = obj['SignalInformation']
-					signal_info = parse_signal_information(file, info)
-					actor_event.signal_information = signal_info
+					data_names = Array.new()
+					# iterate through actor data
+					actor.data.each{ |data|
 
-					update_triggers = obj['TriggeredOnSignals']
-					update_triggers.each{ |trigger|
+						# check if there is no duplicate in actor data
+						if(data_names.include?(data.name))
 
-						actor_event.updated_on_signals.append(trigger)
+							msgError = "ContentError : data " + data.name + " has been declared several time in actor " + actor.actor_id
+							raise StandardError.new(msgError)
+						end
+						data_names.append(data.name)
 					}
 
-					if(Arena::Loader.object_has_key?(obj, 'Rule'))
+					events_names = Array.new()
+					# iterate through actor event
+					actor.events.each{ |event|
 
-						rule = obj['Rule']
-						event_rule = parse_rule(file, rule)
-						actor_event.rule = event_rule
+						# check if event name is not a duplicate
+						if(events_names.include?(event.name))
+
+							msgError = "ContentError : event " + event.name + " has been declared several time in actor " + actor.actor_id
+							raise StandardError.new(msgError)
+						end
+						events_names.append(event.name)
+
+						event.triggers.each{ |trigger|
+
+							params = trigger.split(".")
+							if(!actor_exist?(params[0]))
+
+								msgError = "ContentError : trigger item" + trigger + " from event " + event.name + " of actor " + actor.actor_id + " refers to unknown actor " + params[0]
+								raise StandardError.new(msgError)
+							end
+							
+							if(params[1] == "Update")
+
+								if(!data_exist?(params[0], params[2]))
+
+									msgError = "ContentError : trigger item" + trigger + " from event " + event.name + " of actor " + actor.actor_id + " refers to unknown data " + params[2]
+									raise StandardError.new(msgError)
+								end
+
+							elsif(params[1] == "Event")
+
+								if(!event_exist?(params[0], params[2]))
+
+									msgError = "ContentError : trigger item" + trigger + " from event " + event.name + " of actor " + actor.actor_id + " refers to unknown event " + params[2]
+									raise StandardError.new(msgError)
+								end
+
+							else 
+
+								msgError = "ContentError : trigger item" + trigger + " from event " + event.name + " of actor " + actor.actor_id + " uses invalid comment " + params[1]
+								raise StandardError.new(msgError)
+							end
+						}
+
+						if(!operation_supported?(event.operation))
+
+							msgError = "ContentError : operation " + event.operation + " from event " + event.name + " of actor " + actor.actor_id + " is invalid"
+							raise StandardError.new(msgError)
+						end
+					}	
+				}
+			end
+
+			def identifier_name_valid?(name)
+
+				return name =~ /^[_a-zA-Z][a-zA-Z0-9_]+$/
+			end
+
+			def actor_exist?(tested_actor)
+
+				@actors.each{ |actor|
+
+					if(actor.actor_id == tested_actor)
+
+						return true
 					end
-
-					return actor_event
-			end
-
-			def parse_signal_information(file, obj)
-
-				Arena::Loader.assert_object_key(file, obj, 'type')
-				Arena::Loader.assert_object_key(file, obj, 'datatype')
-				Arena::Loader.assert_object_key(file, obj, 'dimension')
-
-				variable = SignalInformation.new()
-				variable.type = obj['type']
-				variable.datatype = obj['datatype']
-				variable.dimension = obj['dimension']
-
-				return variable
-			end
-
-			def parse_rule(file, obj)
-
-				Arena::Loader.assert_object_key(file, obj, 'Operation')
-				Arena::Loader.assert_object_key(file, obj, 'Argument')
-
-				rule = Rule.new()
-				rule.operation = obj['Operation']
-
-				args = obj['Argument']
-				args.each{ |arg|
-
-					rule.arguments.append(arg)
 				}
 
-				return rule
-			end
-		end
-
-		class Actor
-
-			attr_accessor :actor_id  # @return String
-			attr_accessor :events    # @return Array[Event]
-
-			def initialize()
-
-				@actor_id = ""
-				@events = Array.new()
+				return false
 			end
 
-			def to_s()
+			def data_exist?(tested_actor, tested_data)
 
-				str = ""
-				str = "Actor".light_blue.bold + " ID : " + @actor_id.to_s.light_green.bold + "\n"
-				str += "├─ " + "EventList ".light_blue.bold + "\n"
+				@actors.each{ |actor|
 
-				@events.each_with_index do |element, index|
+					if(actor.actor_id == tested_actor)
 
-					link1 = (index != (@events.size() -1 )) ? "├─ " : "└─ "
-					link2 = (index != (@events.size() -1 )) ? "│  " : "   "
-					has_rule = (element.rule != nil)
-					
-					str += "│  " + link1 + "Event : ".light_blue.bold + element.name.light_green.bold + "\n"
-					str += "│  " + link2 + "├─ " + "SignalInformation ".light_blue.bold + "\n"
-					str += "│  " + link2 + "│  " + "├─ " + "Type : ".light_blue.bold + element.signal_information.type.to_s.light_green.bold  + "\n"
-					str += "│  " + link2 + "│  " + "├─ " + "Datatype : ".light_blue.bold + element.signal_information.datatype.to_s.light_green.bold  + "\n"
-					str += "│  " + link2 + "│  " + "└─ " + "Dimension : ".light_blue.bold + element.signal_information.dimension.to_s.light_green.bold + "\n"
-					str += "│  " + link2 + "├─ " + "TriggeredOnSignals : ".light_blue.bold + "\n"
-					str += "│  " + link2 + "│  " + "├─ " + "this.x".light_green.bold + "\n"
-					str += "│  " + link2 + "│  " + "├─ " + "this.y".light_green.bold + "\n"
-					str += "│  " + link2 + "│  " + "├─ " + "LM1.x".light_green.bold + "\n"
-					str += "│  " + link2 + "│  " + "└─ " + "LM1.y".light_green.bold + "\n"
+						actor.data.each{ |data|
 
-					if(!has_rule)
+							if(data.name == tested_data)
 
-						str += "│  " + link2 + "└─ " + "Rule ".light_blue.bold + "(None)".light_red.bold + "\n"
-					
-					else
-
-						str += "│  " + link2 + "└─ " + "Rule".light_blue.bold + "\n"
-						str += "│  " + link2 + "   " + "├─ " + "Operation : ".light_blue.bold + element.rule.operation.to_s.light_green.bold  + "\n"
-						str += "│  " + link2 + "   " + "└─ " + "Argument ".light_blue.bold + "\n"
-						
-						element.rule.arguments.each_with_index do |arg, i|
-
-							link3 = (i != (element.rule.arguments.size() -1 )) ? "├─ " : "└─ "
-							str += "│  " + link2 + "   " + "   " + link3 + arg.to_s.light_green.bold + "\n"
-						end
+								return true
+							end
+						}
 					end
-					
-				end
+				}
 
-				return str
+				return false
 			end
+
+			def event_exist?(tested_actor, tested_event)
+
+				@actors.each{ |actor|
+
+					if(actor.actor_id == tested_actor)
+
+						actor.event.each{ |event|
+
+							if(event.name == tested_event)
+
+								return true
+							end
+						}
+					end
+				}
+
+				return false
+			end
+
 		end
-
-		class SignalInformation
-
-			attr_accessor :type      # @return String
-			attr_accessor :datatype  # @return String
-			attr_accessor :dimension # @return String
-
-			def initialize()
-
-			end
-		end
-
-		class Event
-
-			attr_accessor :name                      # @return String
-			attr_accessor :signal_information        # @return SignalInformation
-			attr_accessor :updated_on_signals        # @return Array[String]
-			attr_accessor :rule                      # @return Rule
-
-
-			def initialize()
-
-				@updated_on_signals = Array.new()
-				@rule = nil
-			end
-			
-			def has_rule?
-
-				return @rule.nil?
-			end
-		end
-
-		class Rule
-
-			attr_accessor :operation # @return String
-			attr_accessor :arguments # @return Array[String]
-
-			def initialize()
-
-				@arguments = Array.new()
-			end
-		end
-
 	end
 end
